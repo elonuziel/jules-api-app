@@ -60,12 +60,41 @@ export const call = action({
       "x-goog-api-key": apiKey,
       Accept: "application/json",
     };
+    const MAX_RETRIES = 3;
+    const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+    const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
     const request = async <T>(path: string, init?: RequestInit): Promise<T> => {
-      const response = await fetch(`${BASE_URL}${path}`, {
-        ...init,
-        headers: { ...headers, ...(init?.headers ?? {}) },
-      });
-      if (!response.ok) {
+      let delay = 600;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        let response: Response;
+        try {
+          response = await fetch(`${BASE_URL}${path}`, {
+            ...init,
+            headers: { ...headers, ...(init?.headers ?? {}) },
+          });
+        } catch (fetchError) {
+          if (attempt === MAX_RETRIES) throw fetchError;
+          const jitter = Math.floor(Math.random() * 200);
+          await wait(delay + jitter);
+          delay *= 2;
+          continue;
+        }
+
+        if (response.ok) {
+          if (response.status === 204) return {} as T;
+          return (await response.json()) as T;
+        }
+
+        if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_RETRIES) {
+          const retryAfter = response.headers.get("retry-after");
+          const waitTime = retryAfter ? parseInt(retryAfter, 10) * 1000 : delay;
+          const jitter = Math.floor(Math.random() * 200);
+          await wait((Number.isNaN(waitTime) ? delay : waitTime) + jitter);
+          delay *= 2;
+          continue;
+        }
+
         let message = `Jules returned ${response.status}.`;
         try {
           const body = (await response.json()) as { error?: { message?: string } };
@@ -75,8 +104,7 @@ export const call = action({
         }
         throw new Error(message);
       }
-      if (response.status === 204) return {} as T;
-      return (await response.json()) as T;
+      throw new Error("Jules request failed after retries.");
     };
 
     const params = new URLSearchParams();
