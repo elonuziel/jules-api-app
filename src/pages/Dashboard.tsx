@@ -11,9 +11,13 @@ import {
   ChevronRight,
   Code2,
   Command,
+  ExternalLink,
+  Eye,
+  EyeOff,
   GitBranch,
   Github,
   Inbox,
+  Key,
   Layers3,
   ListOrdered,
   LogOut,
@@ -32,7 +36,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -143,23 +147,52 @@ export default function Dashboard() {
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
 
-  async function run(operation: Operation, args: Record<string, unknown> = {}) {
-    return callJules({ operation, ...args } as never) as Promise<unknown>;
+  const [apiKey, setApiKey] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return (
+      localStorage.getItem("jules_custom_api_key") ||
+      sessionStorage.getItem("jules_custom_api_key") ||
+      ""
+    );
+  });
+  const [keyStorageType, setKeyStorageType] = useState<"local" | "session" | "none">(() => {
+    if (typeof window === "undefined") return "none";
+    if (localStorage.getItem("jules_custom_api_key")) return "local";
+    if (sessionStorage.getItem("jules_custom_api_key")) return "session";
+    return "none";
+  });
+  const [keySource, setKeySource] = useState<"client" | "env" | "none">("none");
+  const [keyModalOpen, setKeyModalOpen] = useState(false);
+  const apiKeyRef = useRef(apiKey);
+  apiKeyRef.current = apiKey;
+
+  async function run(
+    operation: Operation,
+    args: Record<string, unknown> = {},
+    keyOverride?: string,
+  ) {
+    const currentKey = keyOverride !== undefined ? keyOverride : apiKeyRef.current;
+    const effectiveApiKey = currentKey ? currentKey.trim() : undefined;
+    return callJules({ operation, apiKey: effectiveApiKey, ...args } as never) as Promise<unknown>;
   }
 
-  async function loadWorkspace() {
+  async function loadWorkspace(keyOverride?: string) {
     setLoading(true);
     setError(null);
     try {
-      const status = (await run("status")) as { configured?: boolean };
+      const status = (await run("status", {}, keyOverride)) as {
+        configured?: boolean;
+        source?: "client" | "env" | "none";
+      };
       setConfigured(Boolean(status.configured));
+      setKeySource(status.source ?? "none");
       if (!status.configured) {
         setLoading(false);
         return;
       }
       const [sessionResponse, sourceResponse] = await Promise.all([
-        run("listSessions", { pageSize: 30 }),
-        run("listSources", { pageSize: 30 }),
+        run("listSessions", { pageSize: 30 }, keyOverride),
+        run("listSources", { pageSize: 30 }, keyOverride),
       ]);
       const sRes = sessionResponse as { sessions?: Session[]; nextPageToken?: string };
       const srcRes = sourceResponse as { sources?: Source[]; nextPageToken?: string };
@@ -176,6 +209,47 @@ export default function Dashboard() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleSaveKey(newKey: string, remember: boolean) {
+    const trimmed = newKey.trim();
+    if (!trimmed) {
+      toast.error("Please enter a valid API key");
+      return;
+    }
+    if (remember) {
+      localStorage.setItem("jules_custom_api_key", trimmed);
+      sessionStorage.removeItem("jules_custom_api_key");
+      setKeyStorageType("local");
+    } else {
+      sessionStorage.setItem("jules_custom_api_key", trimmed);
+      localStorage.removeItem("jules_custom_api_key");
+      setKeyStorageType("session");
+    }
+    apiKeyRef.current = trimmed;
+    setApiKey(trimmed);
+    setKeyModalOpen(false);
+
+    toast.loading("Testing connection...", { id: "test-key" });
+    try {
+      await loadWorkspace(trimmed);
+      toast.success("Jules API connected!", { id: "test-key" });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to connect with this key", {
+        id: "test-key",
+      });
+    }
+  }
+
+  async function handleClearKey() {
+    localStorage.removeItem("jules_custom_api_key");
+    sessionStorage.removeItem("jules_custom_api_key");
+    apiKeyRef.current = "";
+    setApiKey("");
+    setKeyStorageType("none");
+    setKeyModalOpen(false);
+    toast.info("API key removed");
+    await loadWorkspace("");
   }
 
   useEffect(() => {
@@ -470,11 +544,9 @@ export default function Dashboard() {
                 href="https://jules.google/docs/api/reference/"
               />
               <SidebarItem
-                icon={Settings2}
-                label="Connection"
-                onClick={() =>
-                  toast(configured ? "JULES_API_KEY is connected" : "Add JULES_API_KEY in Keys/API keys")
-                }
+                icon={Key}
+                label={configured ? "API Key (Active)" : "Connect API Key"}
+                onClick={() => setKeyModalOpen(true)}
               />
             </div>
           </div>
@@ -548,6 +620,22 @@ export default function Dashboard() {
             <Button
               variant="outline"
               size="sm"
+              className={`h-9 gap-2 rounded-lg text-xs transition-colors ${
+                configured
+                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100"
+              }`}
+              onClick={() => setKeyModalOpen(true)}
+              title={configured ? "Jules API key connected" : "Jules API key not configured"}
+            >
+              <Key className={`size-3.5 ${configured ? "text-emerald-500" : "text-amber-600"}`} />
+              <span className="hidden md:inline">
+                {configured ? "API Key" : "Connect Key"}
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               className="h-9 gap-2 rounded-lg border-slate-200 bg-white text-xs"
               onClick={refresh}
             >
@@ -575,7 +663,13 @@ export default function Dashboard() {
               </button>
             </div>
           )}
-          {configured === false && <ConnectionBanner onRefresh={refresh} />}
+          {configured === false && (
+            <ConnectionBanner
+              onConnect={handleSaveKey}
+              onRefresh={refresh}
+              loading={loading}
+            />
+          )}
           {selectedSession ? (
             <SessionDetail
               session={selectedSession}
@@ -684,6 +778,18 @@ export default function Dashboard() {
             run={run}
           />
         )}
+        {keyModalOpen && (
+          <ApiKeyModal
+            isOpen={keyModalOpen}
+            onClose={() => setKeyModalOpen(false)}
+            configured={configured}
+            keySource={keySource}
+            currentKey={apiKey}
+            keyStorageType={keyStorageType}
+            onSave={handleSaveKey}
+            onDisconnect={handleClearKey}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -746,23 +852,363 @@ function LoadingState() {
   );
 }
 
-function ConnectionBanner({ onRefresh }: { onRefresh: () => void }) {
+function ConnectionBanner({
+  onConnect,
+  onRefresh,
+  loading,
+}: {
+  onConnect: (key: string, remember: boolean) => Promise<void>;
+  onRefresh: () => void;
+  loading: boolean;
+}) {
+  const [keyInput, setKeyInput] = useState("");
+  const [remember, setRemember] = useState(true);
+  const [showKey, setShowKey] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!keyInput.trim()) {
+      toast.error("Please enter a Jules API key");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onConnect(keyInput, remember);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
   return (
-    <div className="mb-8 flex flex-col gap-4 rounded-2xl border border-blue-200 bg-blue-50/60 p-5 sm:flex-row sm:items-center">
-      <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-white text-blue-600">
-        <Zap className="size-5" />
-      </div>
-      <div className="flex-1">
-        <div className="text-sm font-semibold text-slate-900">Connect Jules to get started</div>
-        <div className="mt-1 text-xs leading-5 text-slate-500">
-          Add <code className="rounded bg-white px-1.5 py-0.5 font-mono text-[11px] text-slate-700">JULES_API_KEY</code> in
-          your project Keys/API keys tab. It stays server-side.
+    <div className="mb-8 rounded-2xl border border-blue-200/80 bg-gradient-to-br from-blue-50/80 via-white to-blue-50/40 p-5 sm:p-6 shadow-xs">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+        <div className="flex gap-4">
+          <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-blue-600 text-white shadow-xs">
+            <Key className="size-5" />
+          </div>
+          <div className="max-w-xl">
+            <div className="text-base font-semibold tracking-tight text-slate-900">
+              Connect Google Jules API
+            </div>
+            <p className="mt-1 text-xs leading-relaxed text-slate-500">
+              Paste your Jules API key below to access your repositories and sessions. You can choose to save it on this device or keep it for this browser session only.
+            </p>
+            <div className="mt-2.5 flex items-center gap-3 text-xs">
+              <a
+                href="https://jules.google.com/settings#api"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 font-medium text-blue-600 hover:underline"
+              >
+                <span>Get your key from Jules settings</span>
+                <ExternalLink className="size-3" />
+              </a>
+            </div>
+          </div>
         </div>
+
+        <form onSubmit={handleSubmit} className="flex w-full flex-col gap-3 lg:max-w-md">
+          <div className="relative">
+            <Input
+              type={showKey ? "text" : "password"}
+              value={keyInput}
+              onChange={(e) => setKeyInput(e.target.value)}
+              placeholder="Paste your Jules API key..."
+              className="h-10 rounded-xl border-slate-200 bg-white pr-10 text-xs shadow-none"
+            />
+            <button
+              type="button"
+              onClick={() => setShowKey(!showKey)}
+              className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+              tabIndex={-1}
+            >
+              {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-xs text-slate-600 select-none">
+              <input
+                type="checkbox"
+                checked={remember}
+                onChange={(e) => setRemember(e.target.checked)}
+                className="size-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+              />
+              <span>Remember on this device</span>
+            </label>
+
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="h-8 text-xs text-slate-500 hover:bg-slate-100"
+                onClick={onRefresh}
+                disabled={loading}
+              >
+                <RefreshCw className={`size-3 mr-1.5 ${loading ? "animate-spin" : ""}`} />
+                Check backend
+              </Button>
+              <Button
+                type="submit"
+                size="sm"
+                disabled={submitting || !keyInput.trim()}
+                className="h-8 gap-1.5 rounded-lg bg-blue-600 text-xs text-white hover:bg-blue-700"
+              >
+                {submitting && <RefreshCw className="size-3 animate-spin" />}
+                Connect
+              </Button>
+            </div>
+          </div>
+        </form>
       </div>
-      <Button variant="outline" size="sm" className="rounded-lg border-blue-200 bg-white text-xs" onClick={onRefresh}>
-        Check connection
-      </Button>
     </div>
+  );
+}
+
+function ApiKeyModal({
+  isOpen: _isOpen,
+  onClose,
+  configured,
+  keySource,
+  currentKey,
+  keyStorageType,
+  onSave,
+  onDisconnect,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  configured: boolean | null;
+  keySource: "client" | "env" | "none";
+  currentKey: string;
+  keyStorageType: "local" | "session" | "none";
+  onSave: (key: string, remember: boolean) => Promise<void>;
+  onDisconnect: () => Promise<void>;
+}) {
+  const [newKey, setNewKey] = useState("");
+  const [remember, setRemember] = useState(keyStorageType !== "session");
+  const [showKey, setShowKey] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [isEditing, setIsEditing] = useState(!configured);
+
+  const maskedKey = useMemo(() => {
+    if (!currentKey) return "";
+    if (currentKey.length <= 8) return "••••••••";
+    return currentKey.slice(0, 6) + "••••••••" + currentKey.slice(-4);
+  }, [currentKey]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!newKey.trim()) {
+      toast.error("Please enter an API key");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSave(newKey, remember);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await onDisconnect();
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        initial={{ y: 24, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="max-h-[92vh] w-full max-w-[520px] overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-6 sm:rounded-2xl sm:p-8"
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-blue-50 text-blue-600">
+              <Key className="size-5" />
+            </div>
+            <div>
+              <h2 className="text-lg font-semibold tracking-tight">Jules API Key</h2>
+              <p className="text-xs text-slate-400">Manage connection credentials for Google Jules</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-6">
+          <div className="rounded-xl border border-slate-100 bg-slate-50 p-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-medium text-slate-500">Connection status</span>
+              {configured ? (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-100 px-2.5 py-0.5 text-[11px] font-medium text-emerald-700">
+                  <span className="size-1.5 rounded-full bg-emerald-500" />
+                  Connected
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 text-[11px] font-medium text-amber-700">
+                  <span className="size-1.5 rounded-full bg-amber-500" />
+                  Not configured
+                </span>
+              )}
+            </div>
+
+            {configured && (
+              <div className="mt-3 border-t border-slate-200/60 pt-3 text-xs text-slate-600 space-y-1.5">
+                <div className="flex justify-between">
+                  <span className="text-slate-400">Source:</span>
+                  <span className="font-medium">
+                    {keySource === "client"
+                      ? keyStorageType === "local"
+                        ? "Saved on this device (localStorage)"
+                        : "Session storage (temporary)"
+                      : "Server environment variable"}
+                  </span>
+                </div>
+                {keySource === "client" && maskedKey && (
+                  <div className="flex justify-between items-center">
+                    <span className="text-slate-400">Key:</span>
+                    <span className="font-mono text-[11px] text-slate-700">{maskedKey}</span>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {!configured || isEditing ? (
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-700">
+                  {configured ? "Enter new API key" : "Jules API key"}
+                </label>
+                <div className="relative">
+                  <Input
+                    type={showKey ? "text" : "password"}
+                    value={newKey}
+                    onChange={(e) => setNewKey(e.target.value)}
+                    placeholder="Paste your Jules API key..."
+                    required
+                    className="h-10 rounded-xl border-slate-200 pr-10 text-xs shadow-none"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowKey(!showKey)}
+                    className="absolute right-3 top-2.5 text-slate-400 hover:text-slate-600"
+                    tabIndex={-1}
+                  >
+                    {showKey ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+                <label className="flex cursor-pointer items-start gap-2.5 text-xs text-slate-600 select-none">
+                  <input
+                    type="checkbox"
+                    checked={remember}
+                    onChange={(e) => setRemember(e.target.checked)}
+                    className="mt-0.5 size-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                  />
+                  <div>
+                    <div className="font-medium text-slate-700">Save on this device</div>
+                    <div className="text-[11px] text-slate-400">
+                      Stores key in your browser. If unchecked, the key is cleared when the tab is closed.
+                    </div>
+                  </div>
+                </label>
+              </div>
+
+              <div className="flex items-center justify-between pt-2">
+                <a
+                  href="https://jules.google.com/settings#api"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:underline"
+                >
+                  <span>Get Jules API key</span>
+                  <ExternalLink className="size-3" />
+                </a>
+
+                <div className="flex items-center gap-2">
+                  {configured && (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="h-9 text-xs"
+                      onClick={() => setIsEditing(false)}
+                    >
+                      Cancel
+                    </Button>
+                  )}
+                  <Button
+                    type="submit"
+                    size="sm"
+                    disabled={submitting || !newKey.trim()}
+                    className="h-9 gap-1.5 rounded-lg bg-blue-600 text-xs text-white hover:bg-blue-700"
+                  >
+                    {submitting && <RefreshCw className="size-3 animate-spin" />}
+                    {configured ? "Update key" : "Connect"}
+                  </Button>
+                </div>
+              </div>
+            </form>
+          ) : (
+            <div className="flex flex-col gap-3 pt-2">
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-9 flex-1 rounded-lg text-xs"
+                  onClick={() => setIsEditing(true)}
+                >
+                  Change API Key
+                </Button>
+                {keySource === "client" && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={disconnecting}
+                    className="h-9 rounded-lg border-rose-200 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    onClick={handleDisconnect}
+                  >
+                    {disconnecting && <RefreshCw className="size-3 animate-spin mr-1.5" />}
+                    Disconnect key
+                  </Button>
+                )}
+              </div>
+              <a
+                href="https://jules.google.com/settings#api"
+                target="_blank"
+                rel="noreferrer"
+                className="mt-1 inline-flex items-center justify-center gap-1 text-xs text-slate-500 hover:text-blue-600"
+              >
+                <span>Manage keys in Jules settings</span>
+                <ExternalLink className="size-3" />
+              </a>
+            </div>
+          )}
+        </div>
+      </motion.div>
+    </motion.div>
   );
 }
 

@@ -43,17 +43,21 @@ export const call = action({
     pageSize: v.optional(v.number()),
     pageToken: v.optional(v.string()),
     filter: v.optional(v.string()),
+    apiKey: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Sign in to connect to Jules.");
 
-    const apiKey = process.env.JULES_API_KEY;
+    const apiKey = args.apiKey?.trim() || process.env.JULES_API_KEY;
     if (args.operation === "status") {
-      return { configured: Boolean(apiKey) };
+      return {
+        configured: Boolean(apiKey),
+        source: args.apiKey?.trim() ? "client" : process.env.JULES_API_KEY ? "env" : "none",
+      };
     }
     if (!apiKey) {
-      throw new Error("JULES_API_KEY is not configured. Add it in your project Keys/API keys tab.");
+      throw new Error("Jules API key is not configured. Enter your API key above to connect.");
     }
 
     const headers: Record<string, string> = {
