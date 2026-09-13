@@ -1,3 +1,48 @@
+# Jules Console (Google Jules Web & Mobile Dashboard)
+
+A personal control room and mobile-ready console for the **Google Jules API**, built with React 19, Vite, Tailwind CSS v4, and Convex (hosted via Freebuff).
+
+---
+
+## 🏛️ Architecture: Google Jules API & Freebuff/Convex Backend
+
+### 1. Authenticated Backend Proxy (`src/convex/jules.ts`)
+Google Jules endpoints require server-side requests and bearer token / API key authentication. The Convex action (`jules.call`) acts as a secure relay between the client and `https://jules.googleapis.com/v1alpha`:
+* **Resilience & Rate Limiting:** Implements jittered exponential backoff (600ms, 1200ms, 2400ms + random jitter) and inspects `Retry-After` headers to automatically handle HTTP `429 (Too Many Requests)` and transient server errors (`500`, `502`, `503`, `504`).
+* **Pagination Support:** Seamlessly handles `pageToken` / `nextPageToken` across sessions and connected GitHub source repositories.
+
+### 2. In-App API Key Configuration (BYOK - Bring Your Own Key)
+Instead of forcing the user to configure backend secrets in Freebuff / Convex, the application supports entering and managing the Google Jules API key directly within the app UI:
+* **Why this approach was chosen:**
+  * **Security & Quota Isolation:** If `JULES_API_KEY` were stored globally in the backend environment, anyone visiting the app could use that shared key, spend your API quota, read your private GitHub repositories, and execute sessions. With in-app keys, every user uses their own credentials.
+  * **Zero Cloud Setup:** Users do not need access to the Freebuff cloud dashboard to configure environment secrets.
+* **Storage Options:**
+  * **Save on this device (default):** Saves to browser `localStorage` so the session persists across browser restarts.
+  * **Session-only:** Stores in `sessionStorage`, automatically destroyed when the tab is closed.
+* **Server Fallback:** The backend still supports `process.env.JULES_API_KEY` if configured in Freebuff/Convex, automatically falling back to it when no client key is supplied.
+
+### 3. Authentication Model (Guest vs Email OTP)
+* **Guest Login (Current Default):** Because API keys are now scoped to the user's browser/device, anonymous Guest Login is completely safe, zero-friction, and requires no email token or external auth setup.
+* **Email OTP Login (Temporarily Commented Out):** 
+  * The Email OTP login form in [`src/pages/Auth.tsx`](src/pages/Auth.tsx) is currently commented out to provide a clean, 1-click entry into the dashboard.
+  * **How to re-enable Email OTP:**
+    1. Uncomment the Email OTP form block in [`src/pages/Auth.tsx`](src/pages/Auth.tsx).
+    2. Ensure `FB_EMAIL_API_KEY` is set in your Freebuff backend / GitHub repository secrets.
+
+### 4. Security & Deployment Comparison Matrix
+
+| Approach | Security Level | Setup Convenience | Best For |
+| :--- | :--- | :--- | :--- |
+| **In-App Key (Current Default)** | **High** (each user/device isolates their own key in client storage) | **High** (no Freebuff/Convex env vars needed; Guest or Email both safe) | Personal mobile/web use without managing cloud secrets |
+| **Backend Key + Whitelisted Email** | **High** (only your specific email can access the backend key) | **Medium** (requires setting `JULES_API_KEY` in Freebuff/Convex and restricting email in code) | If you never want to type your key on any new device |
+| **Backend Key + Open Guest / Any Email** | **Insecure** (anyone with your URL can spend your quota & see your repos) | **Low Security** | Testing only in local development |
+
+#### Security Breakdown:
+* **Why "Backend Key + Open Guest" is dangerous:** If `JULES_API_KEY` is placed in backend environment variables while Guest login or unverified email signup is active, any visitor can click into the dashboard. Convex would execute requests with your backend key, exposing your private GitHub repositories, reading your project prompts and plan diffs, creating automated branches/PRs, and depleting your Google API quota.
+* **Why "In-App Key" is safe with Guest Login:** Because the backend has no global key, a Guest user starts with an unconfigured state (`configured: false`). They see no repositories or sessions unless they enter their own Google Jules API key. Your credentials and quota remain completely isolated to your device.
+
+---
+
 ## Overview
 
 This project uses the following tech stack:

@@ -120,24 +120,52 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
           {step === "signIn" ? (
             <>
               <CardHeader className="text-center">
-              <div className="flex justify-center">
-                    <img
-                      src={logo}
-                      alt="Lock Icon"
-                      width={64}
-                      height={64}
-                      className="rounded-lg mb-4 mt-4 cursor-pointer"
-                      onClick={() => navigate("/")}
-                    />
-                  </div>
-                <CardTitle className="text-xl">Get Started</CardTitle>
+                <div className="flex justify-center">
+                  <img
+                    src={logo}
+                    alt="Lock Icon"
+                    width={64}
+                    height={64}
+                    className="rounded-lg mb-4 mt-4 cursor-pointer"
+                    onClick={() => navigate("/")}
+                  />
+                </div>
+                <CardTitle className="text-xl">Welcome to Jules Console</CardTitle>
                 <CardDescription>
-                  Enter your email to log in or sign up
+                  Access your personal Jules workspace
                 </CardDescription>
               </CardHeader>
-              <form onSubmit={handleEmailSubmit}>
-                <CardContent>
-                  
+              <CardContent className="space-y-4 pb-6">
+                <Button
+                  type="button"
+                  className="w-full h-11 text-sm font-medium gap-2 shadow-xs bg-slate-900 text-white hover:bg-slate-800"
+                  onClick={handleGuestLogin}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <UserX className="h-4 w-4" />
+                  )}
+                  Continue as Guest
+                </Button>
+
+                {error && (
+                  <p className="text-center text-sm text-red-500">{error}</p>
+                )}
+
+                <p className="text-[11px] text-center text-muted-foreground leading-relaxed px-2">
+                  No account registration or email verification required. Your Google Jules API key is configured directly on your device.
+                </p>
+
+                {/* =========================================================================
+                    EMAIL OTP LOGIN (COMMENTED OUT)
+                    To re-enable Email OTP authentication:
+                    1. Uncomment the form block below.
+                    2. Ensure FB_EMAIL_API_KEY is configured in your Freebuff / GitHub secrets.
+                    ========================================================================= */}
+                {/* 
+                <form onSubmit={handleEmailSubmit} className="mt-4 pt-4 border-t">
                   <div className="relative flex items-center gap-2">
                     <div className="relative flex-1">
                       <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
@@ -166,32 +194,9 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                   {error && (
                     <p className="mt-2 text-sm text-red-500">{error}</p>
                   )}
-                  
-                  <div className="mt-4">
-                    <div className="relative">
-                      <div className="absolute inset-0 flex items-center">
-                        <span className="w-full border-t" />
-                      </div>
-                      <div className="relative flex justify-center text-xs uppercase">
-                        <span className="bg-background px-2 text-muted-foreground">
-                          Or
-                        </span>
-                      </div>
-                    </div>
-                    
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="w-full mt-4"
-                      onClick={handleGuestLogin}
-                      disabled={isLoading}
-                    >
-                      <UserX className="mr-2 h-4 w-4" />
-                      Continue as Guest
-                    </Button>
-                  </div>
-                </CardContent>
-              </form>
+                </form>
+                */}
+              </CardContent>
             </>
           ) : (
             <>
