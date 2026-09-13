@@ -1,4 +1,4 @@
-import '@vly-ai/integrations';
+import "@vly-ai/integrations";
 import { Toaster } from "@/components/ui/sonner";
 import { RequireAuth } from "@/components/RequireAuth";
 import { VlyToolbar } from "../vly-toolbar-readonly.tsx";
@@ -26,9 +26,9 @@ function RouteLoading() {
   );
 }
 
-const convex = new ConvexReactClient(import.meta.env.VITE_CONVEX_URL as string);
-
-
+const convexUrl =
+  import.meta.env.VITE_CONVEX_URL || "https://placeholder.convex.cloud";
+const convex = new ConvexReactClient(convexUrl);
 
 function RouteSyncer() {
   const location = useLocation();
@@ -52,7 +52,6 @@ function RouteSyncer() {
 
   return null;
 }
-
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
