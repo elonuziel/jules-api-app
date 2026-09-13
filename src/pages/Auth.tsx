@@ -3,20 +3,15 @@ import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@/components/ui/input-otp";
-
+import { Label } from "@/components/ui/label";
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { useAuth } from "@/hooks/use-auth";
 import logo from "@/assets/logo.svg";
-import { ArrowRight, Loader2, Mail, UserX } from "lucide-react";
+import { ArrowRight, ExternalLink, KeyRound, ShieldCheck, UserX } from "lucide-react";
 import { Suspense, useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 
@@ -35,263 +30,160 @@ function resolveRedirectAfterAuth(
 }
 
 function Auth({ redirectAfterAuth }: AuthProps = {}) {
-  const { isLoading: authLoading, isAuthenticated, signIn } = useAuth();
+  const { isAuthenticated, hasKey, saveApiKey, signIn } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const redirect = resolveRedirectAfterAuth(
     searchParams.get("returnTo"),
     redirectAfterAuth,
   );
-  const [step, setStep] = useState<"signIn" | { email: string }>("signIn");
-  const [otp, setOtp] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
+
+  const [inputKey, setInputKey] = useState("");
+  const [rememberKey, setRememberKey] = useState<"local" | "session">("local");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!authLoading && isAuthenticated) {
+    // If the user already has a key configured, direct them straight to dashboard
+    if (hasKey) {
       navigate(redirect);
     }
-  }, [authLoading, isAuthenticated, navigate, redirect]);
-  const handleEmailSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    try {
-      const formData = new FormData(event.currentTarget);
-      await signIn("email-otp", formData);
-      setStep({ email: formData.get("email") as string });
-      setIsLoading(false);
-    } catch (error) {
-      console.error("Email sign-in error:", error);
-      setError(
-        error instanceof Error
-          ? error.message
-          : "Failed to send verification code. Please try again.",
-      );
-      setIsLoading(false);
+  }, [hasKey, navigate, redirect]);
+
+  const handleConnectWithKey = (e: React.FormEvent) => {
+    e.preventDefault();
+    const trimmed = inputKey.trim();
+    if (!trimmed) {
+      setError("Please enter your Jules API key.");
+      return;
     }
+    setError(null);
+    saveApiKey(trimmed, rememberKey === "local");
+    navigate(redirect);
   };
 
-  const handleOtpSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setIsLoading(true);
-    setError(null);
-    try {
-      const formData = new FormData(event.currentTarget);
-      await signIn("email-otp", formData);
-
-      console.log("signed in");
-
-      navigate(redirect);
-    } catch (error) {
-      console.error("OTP verification error:", error);
-
-      setError("The verification code you entered is incorrect.");
-      setIsLoading(false);
-
-      setOtp("");
-    }
-  };
-
-  const handleGuestLogin = async () => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      console.log("Attempting anonymous sign in...");
-      await signIn("anonymous");
-      console.log("Anonymous sign in successful");
-      navigate(redirect);
-    } catch (error) {
-      console.error("Guest login error:", error);
-      console.error("Error details:", JSON.stringify(error, null, 2));
-      setError(`Failed to sign in as guest: ${error instanceof Error ? error.message : 'Unknown error'}`);
-      setIsLoading(false);
-    }
+  const handleContinueAsGuest = async () => {
+    await signIn();
+    navigate(redirect);
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-50">
+      <div className="flex-1 flex items-center justify-center p-4">
+        <div className="w-full max-w-md">
+          <Card className="border-slate-800 bg-slate-900/90 shadow-2xl backdrop-blur-md">
+            <CardHeader className="text-center pb-4">
+              <div className="flex justify-center">
+                <img
+                  src={logo}
+                  alt="Jules Console"
+                  width={56}
+                  height={56}
+                  className="rounded-xl mb-3 cursor-pointer shadow-md"
+                  onClick={() => navigate("/")}
+                />
+              </div>
+              <CardTitle className="text-2xl font-bold tracking-tight text-white">
+                Connect Jules Console
+              </CardTitle>
+              <CardDescription className="text-xs text-slate-400">
+                Direct client-side access to the Google Jules API
+              </CardDescription>
+            </CardHeader>
 
-      
-      {/* Auth Content */}
-      <div className="flex-1 flex items-center justify-center">
-        <div className="flex items-center justify-center h-full flex-col">
-        <Card className="min-w-[350px] pb-0 border shadow-md">
-          {/* Main Auth View: Guest Login (Default) */}
-          <CardHeader className="text-center">
-            <div className="flex justify-center">
-              <img
-                src={logo}
-                alt="Lock Icon"
-                width={64}
-                height={64}
-                className="rounded-lg mb-4 mt-4 cursor-pointer"
-                onClick={() => navigate("/")}
-              />
-            </div>
-            <CardTitle className="text-xl">Welcome to Jules Console</CardTitle>
-            <CardDescription>
-              Access your personal Jules workspace
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4 pb-6">
-            <Button
-              type="button"
-              className="w-full h-11 text-sm font-medium gap-2 shadow-xs bg-slate-900 text-white hover:bg-slate-800"
-              onClick={handleGuestLogin}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <UserX className="h-4 w-4" />
-              )}
-              Continue as Guest
-            </Button>
-
-            {error && (
-              <p className="text-center text-sm text-red-500">{error}</p>
-            )}
-
-            <p className="text-[11px] text-center text-muted-foreground leading-relaxed px-2">
-              No account registration or email verification required. Your Google Jules API key is configured directly on your device.
-            </p>
-          </CardContent>
-
-          {/* =========================================================================
-              EMAIL OTP LOGIN & VERIFICATION (COMMENTED OUT)
-              To re-enable Email OTP authentication:
-              1. Uncomment the JSX block below.
-              2. Ensure FB_EMAIL_API_KEY is configured in your Freebuff / GitHub secrets.
-              ========================================================================= */}
-          {/* 
-          {step === "signIn" ? (
-            <form onSubmit={handleEmailSubmit} className="mt-4 pt-4 border-t px-6 pb-6">
-              <div className="relative flex items-center gap-2">
-                <div className="relative flex-1">
-                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    name="email"
-                    placeholder="name@example.com"
-                    type="email"
-                    className="pl-9"
-                    disabled={isLoading}
-                    required
-                  />
+            <CardContent className="space-y-6 pt-2">
+              <form onSubmit={handleConnectWithKey} className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="api-key" className="text-xs font-medium text-slate-300">
+                      Google Jules API Key
+                    </Label>
+                    <a
+                      href="https://jules.google.com/settings#api"
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-[11px] text-blue-400 hover:text-blue-300 inline-flex items-center gap-1"
+                    >
+                      Get API Key <ExternalLink className="size-3" />
+                    </a>
+                  </div>
+                  <div className="relative">
+                    <KeyRound className="absolute left-3 top-3 size-4 text-slate-500" />
+                    <Input
+                      id="api-key"
+                      type="password"
+                      placeholder="Paste your Jules API key..."
+                      className="pl-9 bg-slate-950 border-slate-700 text-white placeholder:text-slate-500 text-xs font-mono"
+                      value={inputKey}
+                      onChange={(e) => {
+                        setInputKey(e.target.value);
+                        if (error) setError(null);
+                      }}
+                    />
+                  </div>
                 </div>
+
+                <div className="space-y-2 rounded-lg border border-slate-800 bg-slate-950/60 p-3">
+                  <Label className="text-[11px] font-medium text-slate-400">Storage Option</Label>
+                  <RadioGroup
+                    value={rememberKey}
+                    onValueChange={(v) => setRememberKey(v as "local" | "session")}
+                    className="gap-2 text-xs"
+                  >
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="local" id="storage-local" className="border-slate-700 text-blue-500" />
+                      <Label htmlFor="storage-local" className="text-xs text-slate-300 font-normal cursor-pointer">
+                        Remember on this device <span className="text-[10px] text-slate-500">(localStorage)</span>
+                      </Label>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <RadioGroupItem value="session" id="storage-session" className="border-slate-700 text-blue-500" />
+                      <Label htmlFor="storage-session" className="text-xs text-slate-300 font-normal cursor-pointer">
+                        This session only <span className="text-[10px] text-slate-500">(cleared when closed)</span>
+                      </Label>
+                    </div>
+                  </RadioGroup>
+                </div>
+
+                {error && (
+                  <p className="text-xs text-red-400 text-center">{error}</p>
+                )}
+
                 <Button
                   type="submit"
-                  variant="outline"
-                  size="icon"
-                  disabled={isLoading}
+                  className="w-full h-10 text-xs font-medium gap-2 bg-blue-600 hover:bg-blue-500 text-white shadow-md"
                 >
-                  {isLoading ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <ArrowRight className="h-4 w-4" />
-                  )}
+                  Connect & Open Console
+                  <ArrowRight className="size-3.5" />
                 </Button>
-              </div>
-              {error && (
-                <p className="mt-2 text-sm text-red-500">{error}</p>
-              )}
-            </form>
-          ) : (
-            <>
-              <CardHeader className="text-center mt-4">
-                <CardTitle>Check your email</CardTitle>
-                <CardDescription>
-                  We've sent a code to {step.email}
-                </CardDescription>
-              </CardHeader>
-              <form onSubmit={handleOtpSubmit}>
-                <CardContent className="pb-4">
-                  <input type="hidden" name="email" value={step.email} />
-                  <input type="hidden" name="code" value={otp} />
-
-                  <div className="flex justify-center">
-                    <InputOTP
-                      value={otp}
-                      onChange={setOtp}
-                      maxLength={6}
-                      disabled={isLoading}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" && otp.length === 6 && !isLoading) {
-                          const form = (e.target as HTMLElement).closest("form");
-                          if (form) {
-                            form.requestSubmit();
-                          }
-                        }
-                      }}
-                    >
-                      <InputOTPGroup>
-                        {Array.from({ length: 6 }).map((_, index) => (
-                          <InputOTPSlot key={index} index={index} />
-                        ))}
-                      </InputOTPGroup>
-                    </InputOTP>
-                  </div>
-                  {error && (
-                    <p className="mt-2 text-sm text-red-500 text-center">
-                      {error}
-                    </p>
-                  )}
-                  <p className="text-sm text-muted-foreground text-center mt-4">
-                    Didn't receive a code?{" "}
-                    <Button
-                      variant="link"
-                      className="p-0 h-auto"
-                      onClick={() => setStep("signIn")}
-                    >
-                      Try again
-                    </Button>
-                  </p>
-                </CardContent>
-                <CardFooter className="flex-col gap-2">
-                  <Button
-                    type="submit"
-                    className="w-full"
-                    disabled={isLoading || otp.length !== 6}
-                  >
-                    {isLoading ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Verifying...
-                      </>
-                    ) : (
-                      <>
-                        Verify code
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    onClick={() => setStep("signIn")}
-                    disabled={isLoading}
-                    className="w-full"
-                  >
-                    Use different email
-                  </Button>
-                </CardFooter>
               </form>
-            </>
-          )}
-          */}
 
-          <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
-            Secured by{" "}
-            <a
-              href="https://freebuff.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-primary transition-colors"
-            >
-              freebuff.com
-            </a>
-          </div>
-        </Card>
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <span className="w-full border-t border-slate-800" />
+                </div>
+                <div className="relative flex justify-center text-[10px] uppercase">
+                  <span className="bg-slate-900 px-2 text-slate-500">or</span>
+                </div>
+              </div>
+
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full h-10 text-xs font-medium gap-2 border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800 hover:text-white"
+                onClick={handleContinueAsGuest}
+              >
+                <UserX className="size-3.5" />
+                Continue to Console (Enter Key Later)
+              </Button>
+
+              <div className="flex items-start gap-2 rounded-lg border border-emerald-950/60 bg-emerald-950/20 p-3 text-[11px] text-emerald-300">
+                <ShieldCheck className="size-4 shrink-0 text-emerald-400 mt-0.5" />
+                <span>
+                  <strong>100% Client-Side:</strong> Your API key is stored only in your browser/device storage and connects directly to Google Jules without intermediate servers.
+                </span>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

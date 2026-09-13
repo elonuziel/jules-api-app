@@ -10,8 +10,12 @@ const config: CapacitorConfig = {
   },
   server: {
     androidScheme: "https",
-    // Jules and Convex use HTTPS in production; keep cleartext disabled by default.
     cleartext: false,
+  },
+  plugins: {
+    CapacitorHttp: {
+      enabled: true,
+    },
   },
 };
 

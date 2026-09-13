@@ -11,15 +11,15 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Dialog } from "@radix-ui/react-dialog";
-import { ChevronDown, ExternalLink } from "lucide-react";
+import { ChevronDown, RefreshCw } from "lucide-react";
 import React, { useEffect, useState } from "react";
 
 type SyncError = {
   error: string;
   stack: string;
-  filename: string;
-  lineno: number;
-  colno: number;
+  filename?: string;
+  lineno?: number;
+  colno?: number;
 };
 
 type AsyncError = {
@@ -28,31 +28,6 @@ type AsyncError = {
 };
 
 type GenericError = SyncError | AsyncError;
-
-async function reportErrorToVly(errorData: {
-  error: string;
-  stackTrace?: string;
-  filename?: string;
-  lineno?: number;
-  colno?: number;
-}) {
-  if (!import.meta.env.VITE_VLY_APP_ID) {
-    return;
-  }
-
-  try {
-    await fetch(import.meta.env.VITE_VLY_MONITORING_URL, {
-      method: "POST",
-      body: JSON.stringify({
-        ...errorData,
-        url: window.location.href,
-        projectSemanticIdentifier: import.meta.env.VITE_VLY_APP_ID,
-      }),
-    });
-  } catch (error) {
-    console.error("Failed to report error to Vly:", error);
-  }
-}
 
 function ErrorDialog({
   error,
@@ -68,35 +43,44 @@ function ErrorDialog({
         setError(null);
       }}
     >
-      <DialogContent className="bg-red-700 text-white max-w-4xl">
+      <DialogContent className="bg-slate-900 text-white max-w-2xl border-slate-800">
         <DialogHeader>
-          <DialogTitle>Runtime Error</DialogTitle>
+          <DialogTitle className="text-red-400">Application Error</DialogTitle>
         </DialogHeader>
-        A runtime error occurred. Open the vly editor to automatically debug the
-        error.
-        <div className="mt-4">
+        <p className="text-xs text-slate-300">
+          An unexpected error occurred in the client application:
+        </p>
+        <div className="mt-2 text-xs text-red-300 font-mono bg-slate-950 p-2 rounded border border-slate-800">
+          {error.error}
+        </div>
+        <div className="mt-2">
           <Collapsible>
             <CollapsibleTrigger>
-              <div className="flex items-center font-bold cursor-pointer">
-                See error details <ChevronDown />
+              <div className="flex items-center gap-1 text-xs text-slate-400 hover:text-slate-200 cursor-pointer font-medium">
+                Stack trace <ChevronDown className="size-3.5" />
               </div>
             </CollapsibleTrigger>
-            <CollapsibleContent className="max-w-[460px]">
-              <div className="mt-2 p-3 bg-neutral-800 rounded text-white text-sm overflow-x-auto max-h-60 max-w-full [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
+            <CollapsibleContent className="max-w-full">
+              <div className="mt-2 p-3 bg-slate-950 rounded text-slate-400 text-[11px] font-mono overflow-x-auto max-h-56">
                 <pre className="whitespace-pre">{error.stack}</pre>
               </div>
             </CollapsibleContent>
           </Collapsible>
         </div>
-        <DialogFooter>
-          <a
-            href={`https://freebuff.com/project/${import.meta.env.VITE_VLY_APP_ID}`}
-            target="_blank"
+        <DialogFooter className="gap-2 sm:gap-0">
+          <Button
+            variant="outline"
+            className="border-slate-700 bg-transparent text-slate-300 hover:bg-slate-800"
+            onClick={() => setError(null)}
           >
-            <Button>
-              <ExternalLink /> Open editor
-            </Button>
-          </a>
+            Dismiss
+          </Button>
+          <Button
+            className="bg-blue-600 hover:bg-blue-500 text-white"
+            onClick={() => window.location.reload()}
+          >
+            <RefreshCw className="mr-1.5 size-3.5" /> Reload App
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -120,26 +104,11 @@ class ErrorBoundary extends React.Component<
   }
 
   static getDerivedStateFromError() {
-    // Update state so the next render will show the fallback UI.
     return { hasError: true };
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // logErrorToMyService(
-    //   error,
-    //   // Example "componentStack":
-    //   //   in ComponentThatThrows (created by App)
-    //   //   in ErrorBoundary (created by App)
-    //   //   in div (created by App)
-    //   //   in App
-    //   info.componentStack,
-    //   // Warning: `captureOwnerStack` is not available in production.
-    //   React.captureOwnerStack(),
-    // );
-    reportErrorToVly({
-      error: error.message,
-      stackTrace: error.stack,
-    });
+    console.error("Uncaught application error:", error, info);
     this.setState({
       hasError: true,
       error: {
@@ -150,15 +119,11 @@ class ErrorBoundary extends React.Component<
   }
 
   render() {
-    if (this.state.hasError) {
-      // You can render any custom fallback UI
+    if (this.state.hasError && this.state.error) {
       return (
         <ErrorDialog
-          error={{
-            error: "An error occurred",
-            stack: "",
-          }}
-          setError={() => {}}
+          error={this.state.error}
+          setError={() => this.setState({ hasError: false, error: null })}
         />
       );
     }
@@ -175,50 +140,30 @@ export function InstrumentationProvider({
   const [error, setError] = useState<GenericError | null>(null);
 
   useEffect(() => {
-    const handleError = async (event: ErrorEvent) => {
-      try {
-        console.log(event);
-        event.preventDefault();
-        setError({
-          error: event.message,
-          stack: event.error?.stack || "",
-          filename: event.filename || "",
-          lineno: event.lineno,
-          colno: event.colno,
-        });
-
-        if (import.meta.env.VITE_VLY_APP_ID) {
-          await reportErrorToVly({
-            error: event.message,
-            stackTrace: event.error?.stack,
-            filename: event.filename,
-            lineno: event.lineno,
-            colno: event.colno,
-          });
-        }
-      } catch (error) {
-        console.error("Error in handleError:", error);
-      }
+    const handleError = (event: ErrorEvent) => {
+      console.error("Window error event:", event);
+      setError({
+        error: event.message,
+        stack: event.error?.stack || "",
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno,
+      });
     };
 
-    const handleRejection = async (event: PromiseRejectionEvent) => {
-      try {
-        console.error(event);
-
-        if (import.meta.env.VITE_VLY_APP_ID) {
-          await reportErrorToVly({
-            error: event.reason.message,
-            stackTrace: event.reason.stack,
-          });
-        }
-
-        setError({
-          error: event.reason.message,
-          stack: event.reason.stack,
-        });
-      } catch (error) {
-        console.error("Error in handleRejection:", error);
-      }
+    const handleRejection = (event: PromiseRejectionEvent) => {
+      console.error("Unhandled promise rejection:", event);
+      const msg =
+        event.reason instanceof Error
+          ? event.reason.message
+          : typeof event.reason === "string"
+            ? event.reason
+            : "Unhandled Promise Rejection";
+      const stack = event.reason instanceof Error ? event.reason.stack || "" : "";
+      setError({
+        error: msg,
+        stack,
+      });
     };
 
     window.addEventListener("error", handleError);
@@ -229,6 +174,7 @@ export function InstrumentationProvider({
       window.removeEventListener("unhandledrejection", handleRejection);
     };
   }, []);
+
   return (
     <>
       <ErrorBoundary>{children}</ErrorBoundary>

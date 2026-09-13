@@ -1,4 +1,3 @@
-import { vlyPlugin } from "@vly-ai/integrations";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
@@ -8,7 +7,6 @@ import { VitePWA } from "vite-plugin-pwa";
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    vlyPlugin(),
     react(),
     tailwindcss(),
     VitePWA({
@@ -51,7 +49,6 @@ export default defineConfig({
         manualChunks: {
           // Vendor chunks for large libraries
           "react-vendor": ["react", "react-dom", "react-router"],
-          "convex-vendor": ["convex"],
           // Large UI library chunks
           "radix-ui": [
             "@radix-ui/react-accordion",
@@ -99,11 +96,16 @@ export default defineConfig({
   },
   // Optimize dependencies
   optimizeDeps: {
-    include: ["react", "react-dom", "react-router", "@convex-dev/auth/react"],
+    include: ["react", "react-dom", "react-router"],
   },
-  // Performance hints
+  // Dev server configuration
   server: {
-    // Freebuff manages the dev session; keep HMR disabled.
-    hmr: false,
+    proxy: {
+      "/jules-api": {
+        target: "https://jules.googleapis.com/v1alpha",
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/jules-api/, ""),
+      },
+    },
   },
 });

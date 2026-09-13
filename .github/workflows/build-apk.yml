@@ -10,8 +10,6 @@ on:
 permissions:
   contents: write
 
-env:
-  VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL }}
 
 jobs:
   build-and-release:

@@ -1,6 +1,5 @@
-import { api } from "@/convex/_generated/api";
 import { useAuth } from "@/hooks/use-auth";
-import { useAction } from "convex/react";
+import { callJules } from "@/lib/jules";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -127,7 +126,6 @@ function stateFor(state?: string) {
 
 export default function Dashboard() {
   const { user, signOut } = useAuth();
-  const callJules = useAction(api.jules.call);
   const [view, setView] = useState<View>("overview");
   const [sessions, setSessions] = useState<Session[]>([]);
   const [sources, setSources] = useState<Source[]>([]);
