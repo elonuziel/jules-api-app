@@ -892,7 +892,7 @@ function ConnectionBanner({
               Connect Google Jules API
             </div>
             <p className="mt-1 text-xs leading-relaxed text-slate-500">
-              Paste your Jules API key below to access your repositories and sessions. You can choose to save it on this device or keep it for this browser session only.
+              Paste your Jules API key below to access your repositories and sessions. You can save it on this device or keep it for this session only.
             </p>
             <div className="mt-2.5 flex items-center gap-3 text-xs">
               <a
@@ -1076,8 +1076,8 @@ function ApiKeyModal({
                   <span className="font-medium">
                     {keySource === "client"
                       ? keyStorageType === "local"
-                        ? "Saved on this device (localStorage)"
-                        : "Session storage (temporary)"
+                        ? "Saved on this device"
+                        : "Current session only"
                       : "Server environment variable"}
                   </span>
                 </div>
@@ -1126,9 +1126,9 @@ function ApiKeyModal({
                     className="mt-0.5 size-3.5 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
                   />
                   <div>
-                    <div className="font-medium text-slate-700">Save on this device</div>
+                    <div className="font-medium text-slate-700">Remember on this device</div>
                     <div className="text-[11px] text-slate-400">
-                      Stores key in your browser. If unchecked, the key is cleared when the tab is closed.
+                      Keeps your key saved on this device. If unchecked, the key is cleared when the app closes.
                     </div>
                   </div>
                 </label>
