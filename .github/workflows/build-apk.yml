@@ -1,4 +1,4 @@
-name: Build Android APK
+name: Build Android APK & Publish Release
 
 on:
   push:
@@ -7,17 +7,22 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 env:
   VITE_CONVEX_URL: ${{ secrets.VITE_CONVEX_URL }}
 
 jobs:
-  build-apk:
-    name: Build app-debug.apk
+  build-and-release:
+    name: Build & Release APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -59,10 +64,47 @@ jobs:
           chmod +x ./gradlew
           ./gradlew assembleDebug --stacktrace
 
-      - name: Upload debug APK
+      - name: Prepare Release APK Artifacts
+        id: prepare-apk
+        run: |
+          VERSION_TAG="v1.0.${{ github.run_number }}"
+          echo "version_tag=${VERSION_TAG}" >> "$GITHUB_OUTPUT"
+          
+          # Copy to friendly named APKs
+          cp android/app/build/outputs/apk/debug/app-debug.apk "jules-console-${VERSION_TAG}.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "jules-console-latest.apk"
+
+      - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
           name: jules-app-debug-apk
-          path: android/app/build/outputs/apk/debug/*.apk
+          path: |
+            jules-console-*.apk
+            android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
+
+      - name: Create GitHub Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.prepare-apk.outputs.version_tag }}
+          name: Release ${{ steps.prepare-apk.outputs.version_tag }}
+          body: |
+            ## Jules Console ${{ steps.prepare-apk.outputs.version_tag }}
+            
+            ### 📱 Download Android APK
+            - [**Direct Download: jules-console-${{ steps.prepare-apk.outputs.version_tag }}.apk**](https://github.com/${{ github.repository }}/releases/download/${{ steps.prepare-apk.outputs.version_tag }}/jules-console-${{ steps.prepare-apk.outputs.version_tag }}.apk)
+            - [**Latest APK: jules-console-latest.apk**](https://github.com/${{ github.repository }}/releases/download/${{ steps.prepare-apk.outputs.version_tag }}/jules-console-latest.apk)
+            
+            ### 🚀 Installation Instructions
+            1. Download the APK directly on your Android device.
+            2. Open the downloaded `.apk` file.
+            3. If prompted, enable *"Install unknown apps"* for your browser / file manager.
+            4. Enjoy managing Jules from your phone!
+          files: |
+            jules-console-${{ steps.prepare-apk.outputs.version_tag }}.apk
+            jules-console-latest.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
