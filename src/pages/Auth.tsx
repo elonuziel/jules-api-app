@@ -117,87 +117,85 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
       <div className="flex-1 flex items-center justify-center">
         <div className="flex items-center justify-center h-full flex-col">
         <Card className="min-w-[350px] pb-0 border shadow-md">
+          {/* Main Auth View: Guest Login (Default) */}
+          <CardHeader className="text-center">
+            <div className="flex justify-center">
+              <img
+                src={logo}
+                alt="Lock Icon"
+                width={64}
+                height={64}
+                className="rounded-lg mb-4 mt-4 cursor-pointer"
+                onClick={() => navigate("/")}
+              />
+            </div>
+            <CardTitle className="text-xl">Welcome to Jules Console</CardTitle>
+            <CardDescription>
+              Access your personal Jules workspace
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4 pb-6">
+            <Button
+              type="button"
+              className="w-full h-11 text-sm font-medium gap-2 shadow-xs bg-slate-900 text-white hover:bg-slate-800"
+              onClick={handleGuestLogin}
+              disabled={isLoading}
+            >
+              {isLoading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <UserX className="h-4 w-4" />
+              )}
+              Continue as Guest
+            </Button>
+
+            {error && (
+              <p className="text-center text-sm text-red-500">{error}</p>
+            )}
+
+            <p className="text-[11px] text-center text-muted-foreground leading-relaxed px-2">
+              No account registration or email verification required. Your Google Jules API key is configured directly on your device.
+            </p>
+          </CardContent>
+
+          {/* =========================================================================
+              EMAIL OTP LOGIN & VERIFICATION (COMMENTED OUT)
+              To re-enable Email OTP authentication:
+              1. Uncomment the JSX block below.
+              2. Ensure FB_EMAIL_API_KEY is configured in your Freebuff / GitHub secrets.
+              ========================================================================= */}
+          {/* 
           {step === "signIn" ? (
-            <>
-              <CardHeader className="text-center">
-                <div className="flex justify-center">
-                  <img
-                    src={logo}
-                    alt="Lock Icon"
-                    width={64}
-                    height={64}
-                    className="rounded-lg mb-4 mt-4 cursor-pointer"
-                    onClick={() => navigate("/")}
+            <form onSubmit={handleEmailSubmit} className="mt-4 pt-4 border-t px-6 pb-6">
+              <div className="relative flex items-center gap-2">
+                <div className="relative flex-1">
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    name="email"
+                    placeholder="name@example.com"
+                    type="email"
+                    className="pl-9"
+                    disabled={isLoading}
+                    required
                   />
                 </div>
-                <CardTitle className="text-xl">Welcome to Jules Console</CardTitle>
-                <CardDescription>
-                  Access your personal Jules workspace
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4 pb-6">
                 <Button
-                  type="button"
-                  className="w-full h-11 text-sm font-medium gap-2 shadow-xs bg-slate-900 text-white hover:bg-slate-800"
-                  onClick={handleGuestLogin}
+                  type="submit"
+                  variant="outline"
+                  size="icon"
                   disabled={isLoading}
                 >
                   {isLoading ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
-                    <UserX className="h-4 w-4" />
+                    <ArrowRight className="h-4 w-4" />
                   )}
-                  Continue as Guest
                 </Button>
-
-                {error && (
-                  <p className="text-center text-sm text-red-500">{error}</p>
-                )}
-
-                <p className="text-[11px] text-center text-muted-foreground leading-relaxed px-2">
-                  No account registration or email verification required. Your Google Jules API key is configured directly on your device.
-                </p>
-
-                {/* =========================================================================
-                    EMAIL OTP LOGIN (COMMENTED OUT)
-                    To re-enable Email OTP authentication:
-                    1. Uncomment the form block below.
-                    2. Ensure FB_EMAIL_API_KEY is configured in your Freebuff / GitHub secrets.
-                    ========================================================================= */}
-                {/* 
-                <form onSubmit={handleEmailSubmit} className="mt-4 pt-4 border-t">
-                  <div className="relative flex items-center gap-2">
-                    <div className="relative flex-1">
-                      <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        name="email"
-                        placeholder="name@example.com"
-                        type="email"
-                        className="pl-9"
-                        disabled={isLoading}
-                        required
-                      />
-                    </div>
-                    <Button
-                      type="submit"
-                      variant="outline"
-                      size="icon"
-                      disabled={isLoading}
-                    >
-                      {isLoading ? (
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                      ) : (
-                        <ArrowRight className="h-4 w-4" />
-                      )}
-                    </Button>
-                  </div>
-                  {error && (
-                    <p className="mt-2 text-sm text-red-500">{error}</p>
-                  )}
-                </form>
-                */}
-              </CardContent>
-            </>
+              </div>
+              {error && (
+                <p className="mt-2 text-sm text-red-500">{error}</p>
+              )}
+            </form>
           ) : (
             <>
               <CardHeader className="text-center mt-4">
@@ -219,7 +217,6 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
                       disabled={isLoading}
                       onKeyDown={(e) => {
                         if (e.key === "Enter" && otp.length === 6 && !isLoading) {
-                          // Find the closest form and submit it
                           const form = (e.target as HTMLElement).closest("form");
                           if (form) {
                             form.requestSubmit();
@@ -281,6 +278,7 @@ function Auth({ redirectAfterAuth }: AuthProps = {}) {
               </form>
             </>
           )}
+          */}
 
           <div className="py-4 px-6 text-xs text-center text-muted-foreground bg-muted border-t rounded-b-lg">
             Secured by{" "}
