@@ -103,6 +103,13 @@ export const call = action({
         try {
           const body = (await response.json()) as { error?: { message?: string } };
           message = body.error?.message ?? message;
+          if (
+            message.includes("API keys are not supported") ||
+            message.includes("assert a principal")
+          ) {
+            message =
+              "Invalid Jules API key. Please generate a valid API key from https://jules.google.com/settings#api.";
+          }
         } catch {
           // Keep the status message when Jules does not return JSON.
         }
