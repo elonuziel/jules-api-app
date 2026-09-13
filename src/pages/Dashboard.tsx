@@ -1,5 +1,17 @@
 import { useAuth } from "@/hooks/use-auth";
 import { callJules } from "@/lib/jules";
+import {
+  approvePullRequest,
+  clearStoredGitHubToken,
+  deleteBranch,
+  getPullRequest,
+  getStoredGitHubToken,
+  getStoredGitHubTokenStorageType,
+  GitHubPullRequestInfo,
+  mergePullRequest,
+  parsePullRequestUrl,
+  saveStoredGitHubToken,
+} from "@/lib/github";
 import { AnimatePresence, motion } from "framer-motion";
 import {
   Activity,
@@ -15,6 +27,7 @@ import {
   EyeOff,
   GitBranch,
   Github,
+  GitMerge,
   Inbox,
   Key,
   Layers3,
@@ -35,7 +48,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -161,6 +174,13 @@ export default function Dashboard() {
   });
   const [keySource, setKeySource] = useState<"client" | "env" | "none">("none");
   const [keyModalOpen, setKeyModalOpen] = useState(false);
+  const [githubToken, setGithubToken] = useState<string>(() => getStoredGitHubToken());
+  const [githubTokenStorageType, setGithubTokenStorageType] = useState<"local" | "session" | "none">(() =>
+    getStoredGitHubTokenStorageType(),
+  );
+  const [githubModalOpen, setGithubModalOpen] = useState(false);
+  const [manageSourcesModalOpen, setManageSourcesModalOpen] = useState(false);
+  const [refreshingSources, setRefreshingSources] = useState(false);
   const apiKeyRef = useRef(apiKey);
   apiKeyRef.current = apiKey;
 
@@ -248,6 +268,37 @@ export default function Dashboard() {
     setKeyModalOpen(false);
     toast.info("API key removed");
     await loadWorkspace("");
+  }
+
+  async function handleSaveGitHubToken(token: string, remember: boolean) {
+    saveStoredGitHubToken(token, remember);
+    setGithubToken(token.trim());
+    setGithubTokenStorageType(remember ? "local" : "session");
+    setGithubModalOpen(false);
+    toast.success("GitHub token saved");
+  }
+
+  async function handleDisconnectGitHubToken() {
+    clearStoredGitHubToken();
+    setGithubToken("");
+    setGithubTokenStorageType("none");
+    setGithubModalOpen(false);
+    toast.info("GitHub token disconnected");
+  }
+
+  async function handleRefreshSources() {
+    setRefreshingSources(true);
+    try {
+      const sourceResponse = await run("listSources", { pageSize: 30 });
+      const srcRes = sourceResponse as { sources?: Source[]; nextPageToken?: string };
+      setSources(srcRes.sources ?? []);
+      setSourceNextPageToken(srcRes.nextPageToken ?? null);
+      toast.success("Repositories synced with Jules");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to sync repositories");
+    } finally {
+      setRefreshingSources(false);
+    }
   }
 
   useEffect(() => {
@@ -546,6 +597,11 @@ export default function Dashboard() {
                 label={configured ? "API Key (Active)" : "Connect API Key"}
                 onClick={() => setKeyModalOpen(true)}
               />
+              <SidebarItem
+                icon={Github}
+                label={githubToken ? "GitHub PAT (Active)" : "Connect GitHub PAT"}
+                onClick={() => setGithubModalOpen(true)}
+              />
             </div>
           </div>
         </nav>
@@ -634,6 +690,22 @@ export default function Dashboard() {
             <Button
               variant="outline"
               size="sm"
+              className={`h-9 gap-2 rounded-lg text-xs transition-colors ${
+                githubToken
+                  ? "border-slate-200 bg-white text-slate-700 hover:bg-slate-50"
+                  : "border-slate-200 bg-slate-50 text-slate-500 hover:bg-slate-100"
+              }`}
+              onClick={() => setGithubModalOpen(true)}
+              title={githubToken ? "GitHub token connected" : "Connect GitHub Personal Access Token"}
+            >
+              <Github className={`size-3.5 ${githubToken ? "text-slate-900" : "text-slate-400"}`} />
+              <span className="hidden md:inline">
+                {githubToken ? "GitHub PAT" : "Connect GitHub"}
+              </span>
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               className="h-9 gap-2 rounded-lg border-slate-200 bg-white text-xs"
               onClick={refresh}
             >
@@ -680,6 +752,8 @@ export default function Dashboard() {
               onDelete={deleteCurrentSession}
               onBack={() => setSelectedSession(null)}
               isPollingActive={isSelectedSessionActive}
+              githubToken={githubToken}
+              onOpenGitHubModal={() => setGithubModalOpen(true)}
             />
           ) : selectedSource ? (
             <SourceDetail source={selectedSource} onBack={() => setSelectedSource(null)} />
@@ -755,6 +829,9 @@ export default function Dashboard() {
                     hasMore={Boolean(sourceNextPageToken)}
                     loadingMore={loadingMoreSources}
                     onLoadMore={loadMoreSources}
+                    onManageSources={() => setManageSourcesModalOpen(true)}
+                    onRefresh={handleRefreshSources}
+                    refreshing={refreshingSources}
                   />
                 )}
               </motion.div>
@@ -774,6 +851,7 @@ export default function Dashboard() {
               toast.success("Session created");
             }}
             run={run}
+            onManageSources={() => setManageSourcesModalOpen(true)}
           />
         )}
         {keyModalOpen && (
@@ -786,6 +864,24 @@ export default function Dashboard() {
             keyStorageType={keyStorageType}
             onSave={handleSaveKey}
             onDisconnect={handleClearKey}
+          />
+        )}
+        {githubModalOpen && (
+          <GitHubTokenModal
+            isOpen={githubModalOpen}
+            onClose={() => setGithubModalOpen(false)}
+            currentToken={githubToken}
+            tokenStorageType={githubTokenStorageType}
+            onSave={handleSaveGitHubToken}
+            onDisconnect={handleDisconnectGitHubToken}
+          />
+        )}
+        {manageSourcesModalOpen && (
+          <ManageSourcesModal
+            isOpen={manageSourcesModalOpen}
+            onClose={() => setManageSourcesModalOpen(false)}
+            onRefresh={handleRefreshSources}
+            refreshing={refreshingSources}
           />
         )}
       </AnimatePresence>
@@ -1490,18 +1586,50 @@ function SourcesView({
   hasMore,
   loadingMore,
   onLoadMore,
+  onManageSources,
+  onRefresh,
+  refreshing,
 }: {
   sources: Source[];
   onSource: (source: Source) => void;
   hasMore?: boolean;
   loadingMore?: boolean;
   onLoadMore?: () => void;
+  onManageSources?: () => void;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-slate-200 bg-white">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <h2 className="text-sm font-semibold">All connected sources</h2>
-        <p className="mt-1 text-xs text-slate-400">Read-only from Jules · {sources.length} results</p>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 px-5 py-4">
+        <div>
+          <h2 className="text-sm font-semibold">All connected sources</h2>
+          <p className="mt-1 text-xs text-slate-400">Repositories authorized for Jules · {sources.length} results</p>
+        </div>
+        <div className="flex items-center gap-2">
+          {onRefresh && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={refreshing}
+              className="h-8 gap-1.5 rounded-lg border-slate-200 text-xs text-slate-600 hover:bg-slate-50"
+            >
+              <RefreshCw className={`size-3 ${refreshing ? "animate-spin" : ""}`} />
+              <span className="hidden sm:inline">Refresh</span>
+            </Button>
+          )}
+          {onManageSources && (
+            <Button
+              size="sm"
+              onClick={onManageSources}
+              className="h-8 gap-1.5 rounded-lg bg-slate-900 text-xs text-white hover:bg-slate-800"
+            >
+              <ExternalLink className="size-3" />
+              Manage Repositories
+            </Button>
+          )}
+        </div>
       </div>
       {sources.length ? (
         <div className="divide-y divide-slate-100">
@@ -1513,7 +1641,9 @@ function SourcesView({
         <EmptyState
           icon={Github}
           title="No matching sources"
-          description="Connect a GitHub repository to Jules first."
+          description="Grant repository access on GitHub to share code with Jules."
+          action={onManageSources ? "Manage Repositories" : undefined}
+          onAction={onManageSources}
         />
       )}
       {hasMore && (
@@ -1679,6 +1809,259 @@ function ActivityLine({ item }: { item: ActivityItem }) {
   );
 }
 
+function PullRequestCard({
+  pullRequest,
+  githubToken,
+  onOpenGitHubModal,
+}: {
+  pullRequest: { url?: string; title?: string; description?: string };
+  githubToken: string;
+  onOpenGitHubModal: () => void;
+}) {
+  const [prInfo, setPrInfo] = useState<GitHubPullRequestInfo | null>(null);
+  const [, setLoadingInfo] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [merging, setMerging] = useState(false);
+  const [deletingBranch, setDeletingBranch] = useState(false);
+  const [branchDeleted, setBranchDeleted] = useState(false);
+  const [showMergeConfirm, setShowMergeConfirm] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const prUrl = pullRequest.url;
+  const parsed = useMemo(() => (prUrl ? parsePullRequestUrl(prUrl) : null), [prUrl]);
+
+  const loadPrInfo = useCallback(async () => {
+    if (!prUrl) return;
+    setLoadingInfo(true);
+    try {
+      const data = await getPullRequest(prUrl, githubToken);
+      setPrInfo(data);
+    } catch {
+      // Keep null on failure/unauthenticated
+    } finally {
+      setLoadingInfo(false);
+    }
+  }, [prUrl, githubToken]);
+
+  useEffect(() => {
+    void loadPrInfo();
+  }, [loadPrInfo]);
+
+  async function handleApprove() {
+    if (!prUrl) return;
+    setApproving(true);
+    try {
+      await approvePullRequest(prUrl, undefined, githubToken);
+      toast.success("Pull request approved on GitHub!");
+      await loadPrInfo();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not approve PR");
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleMerge() {
+    if (!prUrl) return;
+    setMerging(true);
+    try {
+      await mergePullRequest(prUrl, "squash", githubToken);
+      toast.success("Pull request successfully merged!");
+      setShowMergeConfirm(false);
+      await loadPrInfo();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not merge PR");
+    } finally {
+      setMerging(false);
+    }
+  }
+
+  async function handleDeleteBranch() {
+    if (!prUrl || !prInfo?.headRef) return;
+    setDeletingBranch(true);
+    try {
+      await deleteBranch(prUrl, prInfo.headRef, githubToken);
+      setBranchDeleted(true);
+      setShowDeleteConfirm(false);
+      toast.success(`Deleted branch ${prInfo.headRef}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Could not delete branch");
+    } finally {
+      setDeletingBranch(false);
+    }
+  }
+
+  const isMerged = prInfo?.merged;
+  const isClosed = prInfo?.state === "closed" && !isMerged;
+  const isOpen = prInfo?.state === "open";
+
+  return (
+    <div className="rounded-2xl border border-emerald-200 bg-emerald-50/60 p-5">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1.5 text-sm font-semibold text-emerald-950">
+              <Github className="size-4 text-emerald-800" />
+              <span>Pull Request {parsed ? `#${parsed.pullNumber}` : ""}</span>
+            </div>
+            {prInfo && (
+              <span
+                className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                  isMerged
+                    ? "bg-purple-100 text-purple-800 border border-purple-200"
+                    : isClosed
+                    ? "bg-rose-100 text-rose-800 border border-rose-200"
+                    : "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                }`}
+              >
+                {isMerged ? "Merged" : isClosed ? "Closed" : "Open"}
+              </span>
+            )}
+            {prInfo?.headRef && (
+              <span className="inline-flex items-center gap-1 text-[11px] font-mono text-slate-600 bg-white/70 px-2 py-0.5 rounded border border-emerald-200/60">
+                <GitBranch className="size-3 text-slate-500" />
+                {prInfo.headRef}
+              </span>
+            )}
+          </div>
+          <p className="mt-2 text-xs font-medium leading-relaxed text-emerald-950">
+            {pullRequest.title || prInfo?.title || "Pull request created by Jules"}
+          </p>
+          {parsed && (
+            <div className="mt-1 text-[11px] text-emerald-800/80">
+              {parsed.owner}/{parsed.repo}
+            </div>
+          )}
+        </div>
+        {prUrl && (
+          <a
+            href={prUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-800 hover:bg-emerald-200 transition-colors"
+            title="Open on GitHub"
+          >
+            <ArrowUpRight className="size-4" />
+          </a>
+        )}
+      </div>
+
+      <div className="mt-4 pt-3 border-t border-emerald-200/60 space-y-2">
+        {githubToken ? (
+          <>
+            {isOpen && (
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  size="sm"
+                  onClick={handleApprove}
+                  disabled={approving || merging}
+                  className="h-8 gap-1.5 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-medium shadow-xs"
+                >
+                  {approving ? <RefreshCw className="size-3 animate-spin" /> : <Check className="size-3" />}
+                  Approve PR
+                </Button>
+
+                {!showMergeConfirm ? (
+                  <Button
+                    size="sm"
+                    onClick={() => setShowMergeConfirm(true)}
+                    disabled={approving || merging}
+                    className="h-8 gap-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white text-xs font-medium shadow-xs"
+                  >
+                    <GitMerge className="size-3" />
+                    Merge PR
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      onClick={handleMerge}
+                      disabled={merging}
+                      className="h-8 gap-1.5 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-xs font-medium shadow-xs"
+                    >
+                      {merging ? <RefreshCw className="size-3 animate-spin" /> : <Check className="size-3" />}
+                      Confirm Squash & Merge
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowMergeConfirm(false)}
+                      disabled={merging}
+                      className="h-8 text-xs text-slate-600 hover:bg-emerald-100"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {(isMerged || isClosed) && prInfo?.headRef && !branchDeleted && (
+              <div>
+                {!showDeleteConfirm ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={deletingBranch}
+                    className="h-8 gap-1.5 rounded-lg border-rose-200 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-medium"
+                  >
+                    <Trash2 className="size-3 text-rose-600" />
+                    Delete branch ({prInfo.headRef})
+                  </Button>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <Button
+                      size="sm"
+                      onClick={handleDeleteBranch}
+                      disabled={deletingBranch}
+                      className="h-8 gap-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-xs font-medium"
+                    >
+                      {deletingBranch ? <RefreshCw className="size-3 animate-spin" /> : <Trash2 className="size-3" />}
+                      Confirm Delete
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setShowDeleteConfirm(false)}
+                      disabled={deletingBranch}
+                      className="h-8 text-xs text-slate-600 hover:bg-emerald-100"
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {branchDeleted && (
+              <div className="flex items-center gap-1.5 text-xs text-slate-500 italic">
+                <Check className="size-3 text-emerald-600" />
+                Feature branch has been deleted on GitHub.
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <span className="text-[11px] text-emerald-900/70">
+              Connect a GitHub token to approve, merge, and delete branches directly here.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={onOpenGitHubModal}
+              className="h-7 w-fit gap-1 rounded-md border-emerald-300 bg-white text-[11px] font-medium text-emerald-900 hover:bg-emerald-50"
+            >
+              <Github className="size-3" />
+              Connect Token
+            </Button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SessionDetail({
   session,
   activities,
@@ -1690,6 +2073,8 @@ function SessionDetail({
   onDelete,
   onBack,
   isPollingActive,
+  githubToken,
+  onOpenGitHubModal,
 }: {
   session: Session;
   activities: ActivityItem[];
@@ -1701,6 +2086,8 @@ function SessionDetail({
   onDelete: () => void;
   onBack: () => void;
   isPollingActive?: boolean;
+  githubToken: string;
+  onOpenGitHubModal: () => void;
 }) {
   const meta = stateFor(session.state);
   return (
@@ -1814,24 +2201,12 @@ function SessionDetail({
           {session.outputs?.map(
             (output, index) =>
               output.pullRequest && (
-                <a
+                <PullRequestCard
                   key={index}
-                  href={output.pullRequest.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="block rounded-2xl border border-emerald-200 bg-emerald-50 p-5 hover:bg-emerald-100"
-                >
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-sm font-semibold text-emerald-900">
-                      <Github className="size-4" />
-                      Pull request ready
-                    </div>
-                    <ArrowUpRight className="size-4 text-emerald-700" />
-                  </div>
-                  <p className="mt-2 text-xs leading-5 text-emerald-800/70">
-                    {output.pullRequest.title ?? "Open the pull request Jules created."}
-                  </p>
-                </a>
+                  pullRequest={output.pullRequest}
+                  githubToken={githubToken}
+                  onOpenGitHubModal={onOpenGitHubModal}
+                />
               ),
           )}
         </div>
@@ -1896,11 +2271,13 @@ function CreateSessionModal({
   onClose,
   onCreated,
   run,
+  onManageSources,
 }: {
   sources: Source[];
   onClose: () => void;
   onCreated: (session: Session) => void;
   run: (operation: Operation, args?: Record<string, unknown>) => Promise<unknown>;
+  onManageSources?: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [prompt, setPrompt] = useState("");
@@ -2001,6 +2378,18 @@ function CreateSessionModal({
                   </option>
                 ))}
               </select>
+              <div className="mt-1.5 flex items-center justify-between text-[11px] text-slate-500">
+                <span>Repository access for Jules</span>
+                {onManageSources && (
+                  <button
+                    type="button"
+                    onClick={onManageSources}
+                    className="font-medium text-blue-600 hover:text-blue-700 underline"
+                  >
+                    Reconfigure on GitHub
+                  </button>
+                )}
+              </div>
             </div>
             <div>
               <label className="mb-2 block text-xs font-semibold text-slate-700">Starting branch</label>
@@ -2061,6 +2450,330 @@ function CreateSessionModal({
             </Button>
           </div>
         </form>
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function GitHubTokenModal({
+  isOpen,
+  onClose,
+  currentToken,
+  tokenStorageType,
+  onSave,
+  onDisconnect,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  currentToken: string;
+  tokenStorageType: "local" | "session" | "none";
+  onSave: (token: string, remember: boolean) => Promise<void>;
+  onDisconnect: () => Promise<void>;
+}) {
+  const [tokenInput, setTokenInput] = useState("");
+  const [remember, setRemember] = useState(tokenStorageType !== "session");
+  const [showToken, setShowToken] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
+  const [isEditing, setIsEditing] = useState(!currentToken);
+
+  const maskedToken = useMemo(() => {
+    if (!currentToken) return "";
+    if (currentToken.length <= 8) return "••••••••";
+    return currentToken.slice(0, 4) + "••••••••" + currentToken.slice(-4);
+  }, [currentToken]);
+
+  if (!isOpen) return null;
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tokenInput.trim()) {
+      toast.error("Please enter a GitHub Personal Access Token");
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await onSave(tokenInput.trim(), remember);
+      setIsEditing(false);
+      setTokenInput("");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setDisconnecting(true);
+    try {
+      await onDisconnect();
+      setIsEditing(true);
+      setTokenInput("");
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        initial={{ y: 24, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="max-h-[92vh] w-full max-w-[520px] overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-6 sm:rounded-2xl sm:p-8"
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+              <Github className="size-5" />
+            </div>
+            <div>
+              <div className="text-base font-semibold text-slate-900">GitHub Personal Access Token</div>
+              <div className="text-xs text-slate-500">Approve PRs, merge, and delete branches directly from your device</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <X className="size-5" />
+          </button>
+        </div>
+
+        {currentToken && !isEditing ? (
+          <div className="mt-6 space-y-4">
+            <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-slate-700">Connected Token</div>
+                  <div className="mt-1 font-mono text-sm text-slate-900">
+                    {showToken ? currentToken : maskedToken}
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowToken(!showToken)}
+                  className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-200/60 hover:text-slate-600"
+                >
+                  {showToken ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                </button>
+              </div>
+              <div className="mt-3 flex items-center gap-2 text-[11px] text-slate-400">
+                <ShieldCheck className="size-3.5 text-emerald-600" />
+                Stored in {tokenStorageType === "local" ? "device localStorage" : "sessionStorage"}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(true)}
+                className="flex-1 rounded-lg border-slate-200 text-xs"
+              >
+                Change token
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleDisconnect}
+                disabled={disconnecting}
+                className="rounded-lg border-rose-200 text-xs text-rose-600 hover:bg-rose-50"
+              >
+                {disconnecting && <RefreshCw className="mr-1.5 size-3 animate-spin" />}
+                Disconnect
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+            <div>
+              <div className="flex items-center justify-between pb-1.5">
+                <label className="text-xs font-semibold text-slate-700">Personal Access Token (PAT)</label>
+                <a
+                  href="https://github.com/settings/tokens/new?description=Jules+Console&scopes=repo"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-600 hover:text-blue-700"
+                >
+                  Generate on GitHub <ExternalLink className="size-3" />
+                </a>
+              </div>
+              <div className="relative">
+                <input
+                  type={showToken ? "text" : "password"}
+                  value={tokenInput}
+                  onChange={(e) => setTokenInput(e.target.value)}
+                  placeholder="ghp_... or github_pat_..."
+                  className="w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 pr-10 font-mono text-xs text-slate-900 placeholder:text-slate-400 focus:border-slate-900 focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowToken(!showToken)}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 rounded p-1 text-slate-400 hover:text-slate-600"
+                >
+                  {showToken ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-3.5 text-xs text-slate-500 space-y-1.5">
+              <div className="font-medium text-slate-700">Required Permissions:</div>
+              <p className="text-[11px] leading-relaxed">
+                • <strong>Classic Token:</strong> select <code className="bg-slate-200/70 px-1 py-0.5 rounded">repo</code> scope.
+                <br />
+                • <strong>Fine-grained Token:</strong> grant <strong>Pull requests (Read & Write)</strong> and <strong>Contents (Read & Write)</strong>.
+              </p>
+            </div>
+
+            <div className="rounded-xl bg-slate-50 p-3.5">
+              <label className="flex cursor-pointer items-center justify-between gap-3">
+                <div>
+                  <span className="block text-xs font-semibold text-slate-700">Remember on this device</span>
+                  <span className="mt-0.5 block text-[11px] text-slate-400">
+                    {remember ? "Saved in localStorage across restarts" : "Cleared when tab is closed (sessionStorage)"}
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  className="size-4 accent-slate-900"
+                />
+              </label>
+            </div>
+
+            <div className="flex gap-2 pt-2">
+              {currentToken && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsEditing(false)}
+                  className="rounded-lg border-slate-200 text-xs"
+                >
+                  Cancel
+                </Button>
+              )}
+              <Button
+                type="submit"
+                disabled={submitting || !tokenInput.trim()}
+                className="flex-1 rounded-lg bg-slate-950 text-xs text-white hover:bg-slate-800"
+              >
+                {submitting && <RefreshCw className="mr-1.5 size-3 animate-spin" />}
+                Save Token
+              </Button>
+            </div>
+          </form>
+        )}
+      </motion.div>
+    </motion.div>
+  );
+}
+
+function ManageSourcesModal({
+  isOpen,
+  onClose,
+  onRefresh,
+  refreshing,
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onRefresh: () => Promise<void>;
+  refreshing: boolean;
+}) {
+  if (!isOpen) return null;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/30 p-0 backdrop-blur-sm sm:items-center sm:p-6"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <motion.div
+        initial={{ y: 24, opacity: 0 }}
+        animate={{ y: 0, opacity: 1 }}
+        className="max-h-[92vh] w-full max-w-[540px] overflow-y-auto rounded-t-3xl border border-slate-200 bg-white p-6 sm:rounded-2xl sm:p-8"
+      >
+        <div className="flex items-start justify-between">
+          <div className="flex items-center gap-3">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-slate-900 text-white">
+              <Github className="size-5" />
+            </div>
+            <div>
+              <div className="text-base font-semibold text-slate-900">Manage Repositories with Jules</div>
+              <div className="text-xs text-slate-500">Configure which GitHub repositories Jules can access</div>
+            </div>
+          </div>
+          <button onClick={onClose} className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+            <X className="size-5" />
+          </button>
+        </div>
+
+        <div className="mt-6 space-y-4 text-xs text-slate-600 leading-relaxed">
+          <p>
+            Google Jules connects to GitHub repositories through the <strong>Google Jules GitHub App</strong>. To add new repositories, change repository access, or disconnect repositories, update your permissions in GitHub.
+          </p>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+            <div className="font-semibold text-slate-800">1. Reconfigure on GitHub</div>
+            <p className="text-[11px] text-slate-500">
+              Open your GitHub installed apps and select which repositories Google Jules is authorized to access.
+            </p>
+            <a
+              href="https://github.com/settings/installations"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-xs font-semibold text-white hover:bg-slate-800 transition-colors shadow-xs"
+            >
+              <Github className="size-3.5" />
+              Configure on GitHub <ExternalLink className="size-3" />
+            </a>
+          </div>
+
+          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+            <div className="font-semibold text-slate-800">2. Google Jules Settings</div>
+            <p className="text-[11px] text-slate-500">
+              You can also manage your connected sources directly inside Google Jules.
+            </p>
+            <a
+              href="https://jules.google.com"
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-xs"
+            >
+              <Sparkles className="size-3.5 text-blue-600" />
+              Open Google Jules <ExternalLink className="size-3" />
+            </a>
+          </div>
+
+          <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-4 space-y-3">
+            <div className="font-semibold text-blue-900">3. Sync changes to Jules Console</div>
+            <p className="text-[11px] text-blue-800/80">
+              Once you have granted access on GitHub, refresh your sources list here to start working on the repository.
+            </p>
+            <Button
+              onClick={onRefresh}
+              disabled={refreshing}
+              size="sm"
+              className="h-9 gap-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium"
+            >
+              <RefreshCw className={`size-3.5 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Syncing repositories..." : "Refresh Sources List"}
+            </Button>
+          </div>
+        </div>
+
+        <div className="mt-6 flex justify-end border-t border-slate-100 pt-4">
+          <Button variant="outline" size="sm" onClick={onClose} className="rounded-lg text-xs">
+            Done
+          </Button>
+        </div>
       </motion.div>
     </motion.div>
   );

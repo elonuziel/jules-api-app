@@ -27,6 +27,16 @@ Jules Console operates **100% client-side**. The Android app and web client conn
   * **Session-only:** Stores in `sessionStorage`, destroyed immediately when closed.
 * **Quick Key Generation:** Connect easily with a key from [jules.google.com/settings#api](https://jules.google.com/settings#api).
 
+### 3. Client-Side GitHub PR Actions (`src/lib/github.ts`)
+* **Approve Pull Requests:** Submits a GitHub review with `event: "APPROVE"` directly from the session drawer.
+* **Merge Pull Requests:** Squash-and-merges the PR directly from your phone.
+* **Delete Feature Branch:** One-tap button to delete the remote branch on GitHub once the PR is merged or closed.
+* **GitHub Personal Access Token (PAT):** Saved securely in client device storage with no server middleman.
+
+### 4. Reconfiguring Repositories Shared with Jules
+* **GitHub App Permissions:** Jules accesses code through the Google Jules GitHub App. You can add or remove repositories anytime via GitHub settings (`https://github.com/settings/installations`).
+* **In-App Management & Sync:** Use the "Manage Repositories" button in the Sources view or Create Session dialog to jump directly to GitHub permissions, and use "Refresh Sources" to sync newly added repositories immediately.
+
 ---
 
 ## 🚀 Android APK Build Pipeline
